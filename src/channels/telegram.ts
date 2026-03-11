@@ -3,6 +3,7 @@ import { Api, Bot } from 'grammy';
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
 import { logger } from '../logger.js';
+import { transcribeTelegramVoice } from '../transcription-telegram.js';
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
   Channel,
@@ -115,7 +116,11 @@ export async function sendPoolMessage(
       await sendTelegramMessage(api, numericId, text);
     } else {
       for (let i = 0; i < text.length; i += MAX_LENGTH) {
-        await sendTelegramMessage(api, numericId, text.slice(i, i + MAX_LENGTH));
+        await sendTelegramMessage(
+          api,
+          numericId,
+          text.slice(i, i + MAX_LENGTH),
+        );
       }
     }
     logger.info(
@@ -277,7 +282,15 @@ export class TelegramChannel implements Channel {
 
     this.bot.on('message:photo', (ctx) => storeNonText(ctx, '[Photo]'));
     this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
-    this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
+    this.bot.on('message:voice', async (ctx) => {
+      const fileId = ctx.message.voice.file_id;
+      const transcript = await transcribeTelegramVoice(this.botToken, fileId);
+      if (transcript) {
+        storeNonText(ctx, `[Voice: ${transcript}]`);
+      } else {
+        storeNonText(ctx, '[Voice message — transcription unavailable]');
+      }
+    });
     this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
     this.bot.on('message:document', (ctx) => {
       const name = ctx.message.document?.file_name || 'file';
